@@ -331,6 +331,7 @@ class LTX2Pipeline(Pipeline):
         self._cached_context = None
         self._streaming_state = None
         self._vaes_on_gpu = False
+        self._last_frame: torch.Tensor | None = None  # for frame_chain
 
         logger.info(f"LTX 2.3 pipeline loaded in {time.time() - start:.1f}s")
         _log_gpu_memory("all loaded")
@@ -732,7 +733,12 @@ class LTX2Pipeline(Pipeline):
         )
 
         # Check for i2v image input (file path or tensor)
+        # If frame_chain is enabled and we have a cached last frame, use it
+        frame_chain = kwargs.get("frame_chain", False)
         i2v_source = kwargs.get("i2v_image") or kwargs.get("first_frame_image")
+        if frame_chain and self._last_frame is not None and i2v_source is None:
+            i2v_source = self._last_frame
+            logger.info("frame_chain: using last frame from previous generation as i2v input")
         i2v_strength = float(kwargs.get("i2v_strength", 1.0))
         denoise_mask = None
         clean_latent = None
@@ -848,6 +854,11 @@ class LTX2Pipeline(Pipeline):
 
         logger.info("Decoding audio from latents...")
         audio_tensor, audio_sample_rate = self._decode_audio(audio_latents)
+
+        # Cache last frame for frame_chain
+        if frame_chain:
+            self._last_frame = video_tensor[-1:].clone().cpu()  # (1, H, W, C)
+            logger.info("frame_chain: cached last frame for next generation")
 
         logger.info(
             f"Generated: video={video_tensor.shape}, audio={audio_tensor.shape}, "

@@ -152,7 +152,7 @@ class LTX2Config(BasePipelineConfig):
     pipeline_description: ClassVar[str] = (
         "High-quality audio-video generation with LTX 2.3 (22B distilled)"
     )
-    pipeline_version: ClassVar[str] = "0.3.0"
+    pipeline_version: ClassVar[str] = "0.3.2"
     docs_url: ClassVar[str | None] = "https://github.com/Lightricks/LTX-2"
     estimated_vram_gb: ClassVar[float | None] = 22.0
     requires_models: ClassVar[bool] = True
@@ -333,6 +333,19 @@ class LTX2Config(BasePipelineConfig):
         ),
         json_schema_extra=ui_field_config(
             order=11, label="I2V Strength", is_load_param=False, category="input",
+        ),
+    )
+
+    # Frame chain — use last frame as first frame for next generation
+    frame_chain: bool = Field(
+        default=False,
+        description=(
+            "When enabled, the last frame of the generated video is automatically "
+            "used as the i2v reference image for the next generation, creating "
+            "seamless continuity between chunks. Overrides i2v_image on subsequent calls."
+        ),
+        json_schema_extra=ui_field_config(
+            order=12, label="Frame Chain", is_load_param=False, category="input",
         ),
     )
 
