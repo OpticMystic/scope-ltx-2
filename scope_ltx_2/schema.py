@@ -152,7 +152,7 @@ class LTX2Config(BasePipelineConfig):
     pipeline_description: ClassVar[str] = (
         "High-quality audio-video generation with LTX 2.3 (22B distilled)"
     )
-    pipeline_version: ClassVar[str] = "0.3.4"
+    pipeline_version: ClassVar[str] = "0.3.5"
     docs_url: ClassVar[str | None] = "https://github.com/Lightricks/LTX-2"
     estimated_vram_gb: ClassVar[float | None] = 22.0
     requires_models: ClassVar[bool] = True
@@ -197,17 +197,27 @@ class LTX2Config(BasePipelineConfig):
     }
     supports_prompts: ClassVar[bool] = True
 
+    use_api_text_encoder: bool = Field(
+        default=False,
+        description=(
+            "Use the LTX Video cloud API for text encoding instead of the local "
+            "Gemma model, avoiding the ~13GB VRAM juggle. Requires an API key "
+            "set below or via the LTX_API_KEY environment variable."
+        ),
+        json_schema_extra=ui_field_config(
+            order=2, label="Use LTX Text Encoder API", is_load_param=False,
+        ),
+    )
+
     ltx_api_key: str | None = Field(
         default=None,
         description=(
             "LTX Video API key for cloud-based text encoding. "
-            "When set, prompts are encoded via the LTX API instead of the "
-            "local Gemma model, avoiding the ~13GB VRAM juggle. "
             "Can also be set via the LTX_API_KEY environment variable. "
             "Get a free key at https://console.ltx.video"
         ),
         json_schema_extra=ui_field_config(
-            order=2, label="LTX API Key", is_load_param=False,
+            order=3, label="LTX API Key", is_load_param=False,
         ),
     )
 
