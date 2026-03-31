@@ -373,3 +373,85 @@ def encode_prompt(
     )
 
     return all_layer_hiddens
+
+
+def encode_prompt_api(
+    api_key: str,
+    prompt: str,
+    model_id: str = "ltx-2.3",
+    enhance_prompt: bool = False,
+    timeout: int = 60,
+) -> torch.Tensor:
+    """Encode a prompt via the LTX Video cloud API.
+
+    Calls ``POST https://api.ltx.video/v1/prompt-embedding`` and returns
+    the projected text embeddings in the same format as
+    ``TextEmbeddingProjection`` output: ``[B, T, 6144]``
+    (video 4096 + audio 2048 concatenated).
+
+    Args:
+        api_key: Bearer token from https://console.ltx.video.
+        prompt: Text prompt to encode.
+        model_id: Model identifier (default ``"ltx-2.3"``).
+        enhance_prompt: Whether to run server-side prompt enhancement.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        Tensor of shape ``[B, T, D]`` — projected text embeddings.
+
+    Raises:
+        RuntimeError: On authentication failure or API error.
+    """
+    import io
+    import pickle
+    import requests
+
+    url = "https://api.ltx.video/v1/prompt-embedding"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "prompt": prompt,
+        "model_id": model_id,
+        "enhance_prompt": enhance_prompt,
+    }
+
+    logger.info(f"Calling LTX API for prompt encoding ({len(prompt)} chars)...")
+    response = requests.post(url, json=payload, headers=headers, timeout=timeout)
+
+    if response.status_code == 401:
+        raise RuntimeError(
+            "LTX API key is invalid. Get a free key at https://console.ltx.video"
+        )
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"LTX API error (HTTP {response.status_code}): {response.text[:200]}"
+        )
+
+    # Response is pickle-serialized ComfyUI conditioning: [[tensor, options]]
+    conditioning = pickle.load(io.BytesIO(response.content))
+
+    # Extract the conditioning tensor
+    if isinstance(conditioning, list) and len(conditioning) > 0:
+        cond_entry = conditioning[0]
+        if isinstance(cond_entry, (list, tuple)) and len(cond_entry) >= 1:
+            tensor = cond_entry[0]
+        else:
+            tensor = cond_entry
+    elif isinstance(conditioning, torch.Tensor):
+        tensor = conditioning
+    else:
+        raise RuntimeError(
+            f"Unexpected API response format: {type(conditioning)}"
+        )
+
+    if not isinstance(tensor, torch.Tensor):
+        raise RuntimeError(
+            f"Expected torch.Tensor from API, got {type(tensor)}"
+        )
+
+    logger.info(
+        f"LTX API encoding done: shape={tensor.shape} dtype={tensor.dtype}"
+    )
+    return tensor

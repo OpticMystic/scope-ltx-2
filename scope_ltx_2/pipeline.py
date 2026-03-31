@@ -659,13 +659,43 @@ class LTX2Pipeline(Pipeline):
         generator = torch.Generator(device=self.device).manual_seed(seed)
 
         # =================================================================
-        # Text encoding (Gemma FP8 on GPU -> offload -> connectors)
+        # Text encoding (API or local Gemma FP8)
         # =================================================================
+        ltx_api_key = kwargs.get("ltx_api_key")
+
         if self._cached_prompt_text == prompt_text and self._cached_context is not None:
             context = self._cached_context
             logger.debug("Reusing cached prompt encoding")
-        else:
-            logger.info(f"Encoding prompt: {prompt_text[:80]}...")
+        elif ltx_api_key:
+            # --- API path: encode via LTX cloud, skip VRAM juggling ---
+            from .text_encoder import encode_prompt_api
+
+            logger.info(f"Encoding prompt via LTX API: {prompt_text[:80]}...")
+            try:
+                projected = encode_prompt_api(
+                    api_key=ltx_api_key,
+                    prompt=prompt_text,
+                ).to(device=self.device, dtype=self.dtype)
+                logger.info(f"API encoding done: {projected.shape}")
+
+                self._move_connectors_to_gpu()
+                context = self._transformer.preprocess_text_embeds(projected, unprocessed=True)
+                self._move_connectors_to_cpu()
+
+                del projected
+                gc.collect()
+                torch.cuda.empty_cache()
+
+                self._cached_prompt_text = prompt_text
+                self._cached_context = context
+                _log_gpu_memory("text encoding complete (API)")
+            except Exception as e:
+                logger.warning(f"LTX API encoding failed, falling back to local Gemma: {e}")
+                ltx_api_key = None  # fall through to local path below
+
+        if not (self._cached_prompt_text == prompt_text and self._cached_context is not None) and not ltx_api_key:
+            # --- Local path: Gemma FP8 on GPU -> offload -> connectors ---
+            logger.info(f"Encoding prompt locally: {prompt_text[:80]}...")
 
             # Gemma needs ~13 GB — free everything else first
             self._teardown_denoising()
@@ -700,7 +730,7 @@ class LTX2Pipeline(Pipeline):
 
             self._cached_prompt_text = prompt_text
             self._cached_context = context
-            _log_gpu_memory("text encoding complete")
+            _log_gpu_memory("text encoding complete (local)")
 
         # Move VAEs to GPU before denoising setup so the streaming config
         # accounts for their memory in the available VRAM budget.

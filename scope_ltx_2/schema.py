@@ -152,7 +152,7 @@ class LTX2Config(BasePipelineConfig):
     pipeline_description: ClassVar[str] = (
         "High-quality audio-video generation with LTX 2.3 (22B distilled)"
     )
-    pipeline_version: ClassVar[str] = "0.3.2"
+    pipeline_version: ClassVar[str] = "0.3.3"
     docs_url: ClassVar[str | None] = "https://github.com/Lightricks/LTX-2"
     estimated_vram_gb: ClassVar[float | None] = 22.0
     requires_models: ClassVar[bool] = True
@@ -196,6 +196,19 @@ class LTX2Config(BasePipelineConfig):
         "video": ModeDefaults(),
     }
     supports_prompts: ClassVar[bool] = True
+
+    ltx_api_key: str | None = Field(
+        default=None,
+        description=(
+            "LTX Video API key for cloud-based text encoding. "
+            "When set, prompts are encoded via the LTX API instead of the "
+            "local Gemma model, avoiding the ~13GB VRAM juggle. "
+            "Get a free key at https://console.ltx.video"
+        ),
+        json_schema_extra=ui_field_config(
+            order=2, label="LTX API Key", is_load_param=False,
+        ),
+    )
 
     lora_merge_strategy: str = Field(
         default="permanent_merge",
