@@ -661,7 +661,7 @@ class LTX2Pipeline(Pipeline):
         # =================================================================
         # Text encoding (API or local Gemma FP8)
         # =================================================================
-        ltx_api_key = kwargs.get("ltx_api_key")
+        ltx_api_key = kwargs.get("ltx_api_key") or os.getenv("LTX_API_KEY")
 
         if self._cached_prompt_text == prompt_text and self._cached_context is not None:
             context = self._cached_context
