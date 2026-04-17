@@ -23,6 +23,7 @@ Audio Support:
 import gc
 import json
 import logging
+import os
 import random
 import time
 from pathlib import Path
@@ -209,6 +210,8 @@ class LTX2Pipeline(Pipeline):
         gemma_model_path: str | None = None,
         ffn_chunk_size: int | None = 4096,
         loras: list[dict] | None = None,
+        use_api_text_encoder: bool = False,
+        ltx_api_key: str | None = None,
         **kwargs,
     ):
         from .model_loader import load_transformer
@@ -238,6 +241,15 @@ class LTX2Pipeline(Pipeline):
         self.sigmas = sigmas if sigmas is not None else make_sigma_schedule(num_steps, schedule)
         self.ffn_chunk_size = ffn_chunk_size
 
+        resolved_api_key = ltx_api_key or os.getenv("LTX_API_KEY")
+        self._use_api_text_encoder = bool(use_api_text_encoder and resolved_api_key)
+        self._ltx_api_key = resolved_api_key if self._use_api_text_encoder else None
+        if use_api_text_encoder and not resolved_api_key:
+            logger.warning(
+                "use_api_text_encoder=True but no API key found (neither ltx_api_key "
+                "nor LTX_API_KEY env var). Falling back to local Gemma."
+            )
+
         if kwargs:
             logger.debug(f"LTX2Pipeline ignoring unknown kwargs: {list(kwargs.keys())}")
 
@@ -255,7 +267,7 @@ class LTX2Pipeline(Pipeline):
             video_vae_path = str(kijai_dir / "vae" / "LTX23_video_vae_bf16.safetensors")
         if audio_vae_path is None:
             audio_vae_path = str(kijai_dir / "vae" / "LTX23_audio_vae_bf16.safetensors")
-        if gemma_model_path is None:
+        if gemma_model_path is None and not self._use_api_text_encoder:
             fp8_path = comfy_dir / "split_files" / "text_encoders" / "gemma_3_12B_it_fp8_scaled.safetensors"
             if fp8_path.exists():
                 gemma_model_path = str(fp8_path)
@@ -266,23 +278,30 @@ class LTX2Pipeline(Pipeline):
                 )
 
         logger.info(f"Transformer: {transformer_path}")
-        logger.info(f"Text projection: {text_projection_path}")
-        logger.info(f"Gemma: {gemma_model_path}")
+        if self._use_api_text_encoder:
+            logger.info("Text encoder: LTX cloud API (skipping Gemma + text projection load)")
+            self._text_encoder = None
+            self._tokenizer = None
+            self._text_projection = None
+            self._text_encoder_on_gpu = False
+        else:
+            logger.info(f"Text projection: {text_projection_path}")
+            logger.info(f"Gemma: {gemma_model_path}")
 
-        # Step 1: Load Gemma on GPU (FP8 ~13GB)
-        gemma_device = device if Path(gemma_model_path).suffix == ".safetensors" else torch.device("cpu")
-        logger.info(f"Loading Gemma 3 12B on {gemma_device}...")
-        self._text_encoder, self._tokenizer = load_gemma_text_encoder(
-            gemma_model_path, device=gemma_device, dtype=dtype
-        )
-        self._text_encoder_on_gpu = True
-        _log_gpu_memory("gemma loaded")
+            # Step 1: Load Gemma on GPU (FP8 ~13GB)
+            gemma_device = device if Path(gemma_model_path).suffix == ".safetensors" else torch.device("cpu")
+            logger.info(f"Loading Gemma 3 12B on {gemma_device}...")
+            self._text_encoder, self._tokenizer = load_gemma_text_encoder(
+                gemma_model_path, device=gemma_device, dtype=dtype
+            )
+            self._text_encoder_on_gpu = True
+            _log_gpu_memory("gemma loaded")
 
-        # Step 2: Load text projection on CPU
-        logger.info("Loading text projection (aggregate embeds)...")
-        self._text_projection = TextEmbeddingProjection.from_checkpoint(
-            text_projection_path, dtype=dtype
-        )
+            # Step 2: Load text projection on CPU
+            logger.info("Loading text projection (aggregate embeds)...")
+            self._text_projection = TextEmbeddingProjection.from_checkpoint(
+                text_projection_path, dtype=dtype
+            )
 
         # Step 3: Load transformer to CPU
         logger.info("Loading transformer (FP8, CPU-resident)...")
@@ -448,7 +467,7 @@ class LTX2Pipeline(Pipeline):
         logger.info(f"FFN chunking applied with chunk_size={chunk_size}")
 
     def _offload_text_encoder(self):
-        if not self._text_encoder_on_gpu:
+        if not self._text_encoder_on_gpu or self._text_encoder is None:
             return
         logger.info("Offloading Gemma to CPU...")
         _move_module_to(self._text_encoder, "cpu")
@@ -460,6 +479,11 @@ class LTX2Pipeline(Pipeline):
     def _load_text_encoder(self):
         if self._text_encoder_on_gpu:
             return
+        if self._text_encoder is None:
+            raise RuntimeError(
+                "Local Gemma text encoder is not loaded. Reload the pipeline "
+                "with use_api_text_encoder=False to use local encoding."
+            )
         logger.info("Loading Gemma back to GPU...")
         _move_module_to(self._text_encoder, self.device)
         self._text_encoder_on_gpu = True
@@ -661,8 +685,13 @@ class LTX2Pipeline(Pipeline):
         # =================================================================
         # Text encoding (API or local Gemma FP8)
         # =================================================================
-        use_api_text_encoder = kwargs.get("use_api_text_encoder", False)
-        ltx_api_key = (kwargs.get("ltx_api_key") or os.getenv("LTX_API_KEY")) if use_api_text_encoder else None
+        # The API toggle + key are load params — set once at pipeline init so
+        # Gemma can be skipped entirely when the API is in use. Per-generation
+        # kwargs are accepted for convenience but cannot override a cold start
+        # where Gemma wasn't loaded.
+        ltx_api_key = self._ltx_api_key
+        if not ltx_api_key and kwargs.get("use_api_text_encoder"):
+            ltx_api_key = kwargs.get("ltx_api_key") or os.getenv("LTX_API_KEY")
 
         if self._cached_prompt_text == prompt_text and self._cached_context is not None:
             context = self._cached_context
@@ -691,6 +720,13 @@ class LTX2Pipeline(Pipeline):
                 self._cached_context = context
                 _log_gpu_memory("text encoding complete (API)")
             except Exception as e:
+                if self._text_encoder is None:
+                    raise RuntimeError(
+                        f"LTX API text encoding failed and Gemma is not loaded "
+                        f"(pipeline was started with use_api_text_encoder=True). "
+                        f"Reload the pipeline with the API toggle off to use local "
+                        f"Gemma. Original error: {e}"
+                    ) from e
                 logger.warning(f"LTX API encoding failed, falling back to local Gemma: {e}")
                 ltx_api_key = None  # fall through to local path below
 
