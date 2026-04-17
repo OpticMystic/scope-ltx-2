@@ -152,7 +152,7 @@ class LTX2Config(BasePipelineConfig):
     pipeline_description: ClassVar[str] = (
         "High-quality audio-video generation with LTX 2.3 (22B distilled)"
     )
-    pipeline_version: ClassVar[str] = "0.3.7"
+    pipeline_version: ClassVar[str] = "0.3.8"
     docs_url: ClassVar[str | None] = "https://github.com/Lightricks/LTX-2"
     estimated_vram_gb: ClassVar[float | None] = 22.0
     requires_models: ClassVar[bool] = True
@@ -325,6 +325,21 @@ class LTX2Config(BasePipelineConfig):
         description=(
             "Chunk size for FFN processing. Smaller values use less memory but "
             "have more kernel launch overhead. Set to None to disable chunking."
+        ),
+    )
+
+    streaming_safety_margin_gb: float | None = Field(
+        default=None,
+        description=(
+            "VRAM to reserve for forward-pass activations during block "
+            "streaming. Controls how many transformer blocks stay resident on "
+            "GPU: higher value = fewer resident blocks = more room for "
+            "self-attention / FFN intermediates. Leave unset for an adaptive "
+            "default that scales with total VRAM (≥24 GB: 1.5, 20 GB: 3.0, "
+            "16 GB: 5.0). Bump this if you hit OOM on step 1 of denoising."
+        ),
+        json_schema_extra=ui_field_config(
+            order=8, label="Streaming Safety Margin (GB)", is_load_param=True,
         ),
     )
 

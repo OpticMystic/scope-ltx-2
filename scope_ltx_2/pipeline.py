@@ -212,6 +212,7 @@ class LTX2Pipeline(Pipeline):
         loras: list[dict] | None = None,
         use_api_text_encoder: bool = False,
         ltx_api_key: str | None = None,
+        streaming_safety_margin_gb: float | None = None,
         **kwargs,
     ):
         from .model_loader import load_transformer
@@ -240,6 +241,7 @@ class LTX2Pipeline(Pipeline):
         self.schedule = schedule
         self.sigmas = sigmas if sigmas is not None else make_sigma_schedule(num_steps, schedule)
         self.ffn_chunk_size = ffn_chunk_size
+        self.streaming_safety_margin_gb = streaming_safety_margin_gb
 
         resolved_api_key = ltx_api_key or os.getenv("LTX_API_KEY")
         self._use_api_text_encoder = bool(use_api_text_encoder and resolved_api_key)
@@ -615,17 +617,35 @@ class LTX2Pipeline(Pipeline):
         free_mem, total_mem = torch.cuda.mem_get_info(self.device)
         allocated = torch.cuda.memory_allocated(self.device)
         available_gb = (total_mem - allocated) / 1024**3
+        total_gb = total_mem / 1024**3
 
-        # Forward pass intermediates (Q/K/V projections, FFN activations, etc.)
-        # scale linearly with sequence length. Base safety of 1.5 GB is
-        # calibrated for the normal ~2k token case; scale up for IC-LoRA.
+        # Base safety margin scales with card size: the 1.5 GB default is
+        # calibrated for 24 GB cards. Smaller cards need much more headroom
+        # because a larger fraction of VRAM is consumed by resident blocks,
+        # leaving too little for self-attention / FFN intermediates.
+        if self.streaming_safety_margin_gb is not None:
+            base_safety_gb = self.streaming_safety_margin_gb
+            logger.info(f"Using user-provided streaming_safety_margin_gb={base_safety_gb}")
+        elif total_gb >= 23.0:
+            base_safety_gb = 1.5
+        elif total_gb >= 19.0:
+            base_safety_gb = 3.0
+        else:
+            base_safety_gb = 5.0
+        logger.info(
+            f"Base streaming safety margin: {base_safety_gb:.1f} GB "
+            f"(total VRAM {total_gb:.1f} GB)"
+        )
+
+        # Forward pass intermediates scale linearly with sequence length;
+        # scale safety up for IC-LoRA / high-token runs.
         BASE_TOKENS = 2040
-        safety_gb = 1.5
+        safety_gb = base_safety_gb
         if total_tokens > BASE_TOKENS:
             ratio = total_tokens / BASE_TOKENS
-            safety_gb = 1.5 * ratio
+            safety_gb = base_safety_gb * ratio
             logger.info(
-                f"Streaming safety margin: {safety_gb:.1f} GB "
+                f"Streaming safety margin scaled: {safety_gb:.1f} GB "
                 f"({total_tokens} tokens, {ratio:.1f}x base)"
             )
 
