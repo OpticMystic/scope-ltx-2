@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "scope-ltx-2"
+name = "scope-ltx-gpu-poor"
 version = "0.3.8"
-description = "LTX 2.3 audio-video generation plugin for Daydream Scope"
+description = "LTX 2.3 audio-video generation plugin for Daydream Scope — modified for lower-VRAM GPUs (16 GB) with LTX API text encoder and frame-chain"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -17,10 +17,10 @@ dependencies = [
 ]
 
 [tool.setuptools.package-data]
-scope_ltx_2 = ["gemma_config/*.json"]
+scope_ltx_gpu_poor = ["gemma_config/*.json"]
 
 [project.entry-points.scope]
-scope-ltx-2 = "scope_ltx_2"
+scope-ltx-gpu-poor = "scope_ltx_gpu_poor"
 
 [dependency-groups]
 dev = [

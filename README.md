@@ -1,4 +1,14 @@
-# scope-ltx-2
+# scope-ltx-gpu-poor
+
+Fork of [daydreamlive/scope-ltx-2](https://github.com/daydreamlive/scope-ltx-2) tuned for lower-VRAM GPUs (16 GB) with:
+
+- **LTX cloud API text encoder** — skips the ~13 GB Gemma 3 12B load entirely when you supply an `LTX_API_KEY`
+- **Frame chain** — carries the last generated frame into the next call as an I2V reference for seamless continuity
+- **Adaptive block streaming** — safety margin auto-scales with total VRAM (16 GB → 5 GB, 24 GB → 1.5 GB) and is user-overridable
+
+Installs side-by-side with the official `scope-ltx-2`; this one registers pipeline `ltx2_gpu_poor` ("LTX GPU Poor").
+
+---
 
 [![Available on Daydream](https://img.shields.io/badge/Daydream-Install_Node-FF6B35)](https://app.daydream.live/nodes/daydreamlive/ltx-2)
 
@@ -51,7 +61,7 @@ Follow the [manual installation](https://github.com/daydreamlive/scope/tree/main
 Install the plugin within the `scope` directory:
 
 ```bash
-DAYDREAM_SCOPE_PREVIEW=1 uv run daydream-scope install git+https://github.com/daydreamlive/scope-ltx-2.git
+DAYDREAM_SCOPE_PREVIEW=1 uv run daydream-scope install git+https://github.com/OpticMystic/scope-ltx-2.git@feat/frame-chain
 ```
 
 Confirm that the plugin is installed:
@@ -60,7 +70,7 @@ Confirm that the plugin is installed:
 DAYDREAM_SCOPE_PREVIEW=1 uv run daydream-scope plugins
 ```
 
-Confirm that the `ltx2` pipeline is available:
+Confirm that the `ltx2_gpu_poor` pipeline is available:
 
 ```bash
 DAYDREAM_SCOPE_PREVIEW=1 uv run daydream-scope pipelines
@@ -69,7 +79,7 @@ DAYDREAM_SCOPE_PREVIEW=1 uv run daydream-scope pipelines
 ## Upgrade
 
 ```bash
-DAYDREAM_SCOPE_PREVIEW=1 uv run daydream-scope install --upgrade git+https://github.com/daydreamlive/scope-ltx-2.git
+DAYDREAM_SCOPE_PREVIEW=1 uv run daydream-scope install --upgrade git+https://github.com/OpticMystic/scope-ltx-2.git@feat/frame-chain
 ```
 
 ## Usage
@@ -105,12 +115,12 @@ export HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 uv run daydream-scope
 ```
 
-The web UI defaults to `http://localhost:8000`. Select pipeline **`ltx2`** in Settings, or load it via the [API](https://github.com/daydreamlive/scope/blob/main/docs/server.md) ([load pipeline](https://github.com/daydreamlive/scope/blob/main/docs/api/load.md#load-a-pipeline)).
+The web UI defaults to `http://localhost:8000`. Select pipeline **`ltx2_gpu_poor`** in Settings, or load it via the [API](https://github.com/daydreamlive/scope/blob/main/docs/server.md) ([load pipeline](https://github.com/daydreamlive/scope/blob/main/docs/api/load.md#load-a-pipeline)).
 
 Prefetch weights without the UI:
 
 ```bash
-uv run download_models --pipeline ltx2
+uv run download_models --pipeline ltx2_gpu_poor
 ```
 
 ### Configuration Options
@@ -142,7 +152,7 @@ uv run download_models --pipeline ltx2
 curl -X POST http://localhost:8000/load \
   -H "Content-Type: application/json" \
   -d '{
-    "pipeline_id": "ltx2",
+    "pipeline_id": "ltx2_gpu_poor",
     "params": {
       "height": 384,
       "width": 320,

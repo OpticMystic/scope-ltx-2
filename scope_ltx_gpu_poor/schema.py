@@ -147,10 +147,11 @@ class LTX2Config(BasePipelineConfig):
     Fits on a 24GB GPU with text encoder offloading enabled.
     """
 
-    pipeline_id: ClassVar[str] = "ltx2"
-    pipeline_name: ClassVar[str] = "LTX 2.3"
+    pipeline_id: ClassVar[str] = "ltx2_gpu_poor"
+    pipeline_name: ClassVar[str] = "LTX GPU Poor"
     pipeline_description: ClassVar[str] = (
-        "High-quality audio-video generation with LTX 2.3 (22B distilled)"
+        "LTX 2.3 audio-video generation tuned for lower-VRAM GPUs (16 GB) — "
+        "LTX API text encoder support, frame-chain, and adaptive block streaming"
     )
     pipeline_version: ClassVar[str] = "0.3.8"
     docs_url: ClassVar[str | None] = "https://github.com/Lightricks/LTX-2"

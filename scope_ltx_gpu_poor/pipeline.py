@@ -39,7 +39,7 @@ from .schema import LTX2Config
 if TYPE_CHECKING:
     from scope.core.pipelines.schema import BasePipelineConfig
 
-logging.getLogger("scope_ltx_2").setLevel(logging.INFO)
+logging.getLogger("scope_ltx_gpu_poor").setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 def _load_sd_with_prefix_replace(
@@ -608,7 +608,7 @@ class LTX2Pipeline(Pipeline):
         self._move_transformer_scaffold_to_gpu()
         _log_gpu_memory("transformer scaffold on GPU")
 
-        from scope_ltx_2.weight_streaming import (
+        from scope_ltx_gpu_poor.weight_streaming import (
             calculate_optimal_streaming_config,
             setup_block_streaming,
         )
@@ -1019,7 +1019,7 @@ class LTX2Pipeline(Pipeline):
         """Clean up block streaming and move all blocks back to CPU."""
         if self._streaming_state is None:
             return
-        from scope_ltx_2.weight_streaming import cleanup_block_streaming
+        from scope_ltx_gpu_poor.weight_streaming import cleanup_block_streaming
         cleanup_block_streaming(
             self._transformer.transformer_blocks,
             self._streaming_state,
